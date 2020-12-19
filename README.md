@@ -52,7 +52,7 @@ I²C communication modules and clock generator modules are included in [i2c.v](S
 | `busy` | M/S  |  O  | 1 | System in transaction |
 | `newData` | M/S |  O  | 1 | Pulse to show new received |
 | `dataReq` | M |  O  | 1 | New data should be entered |
-| `data_valid` | M |  I  | 1 | `data_i` is valid, requred to be high to enter `WRITE` state |
+| `data_valid` | M |  I  | 1 | `data_i` is valid, required to be high to enter `WRITE` state |
 | `start` | M |  I  | 1 | Start a new transaction |
 | `data_byte_size` | M |  I  | 2 | (Byte count - 1) for transaction |
 | `read_nwrite` | M |  I  | 1 | Read/Not Write |
