@@ -153,7 +153,6 @@
             counter <= 3'd0;
           end
       endcase
-      
     end
 
   //State transactions
@@ -255,6 +254,173 @@
     end
   clockGen_i2c sdaGEN(clk, rst, freqSLCT, i2c_clk);
  endmodule//i2c_master
+
+module i2c_slave(
+  input clk,
+  input rst,
+  //Config & Control
+  output busy,
+  output newData, //New data avaible 
+  output dataReq,
+  //Data interface
+  input [6:0] addr, //I2C address for slave
+  input [7:0] data_i, //Data in
+  output reg [7:0] data_o, //Data Out
+  //I2C pins
+  (* clock_buffer_type="none" *) input SCL,
+  inout SDA/* synthesis keep = 1 */);
+  localparam IDLE = 3'b000,
+             ADDRS = 3'b001,
+         ADDRS_ACK = 3'b011,
+             WRITE = 3'b110,
+         WRITE_ACK = 3'b010,
+              READ = 3'b111,
+          READ_ACK = 3'b101;
+  wire in_IDLE, in_ADDRS_ACK, in_ADDRS, in_WRITE, in_WRITE_ACK, in_READ, in_READ_ACK, in_STOP;
+  wire SDA_Write;
+  wire SDA_Claim;
+  reg [7:0] data_i_buff, data_o_buff;
+  reg SDA_d, SCL_d, in_READ_d;
+  reg [2:0] state;
+  wire SDA_negedge, SDA_posedge, SCL_negedge/*, SCL_posedge*/;
+  wire in_READ_pulse;
+  reg [2:0] counter;
+  wire counterDONE;
+  wire addrsed;
+
+  //I2C signal edges into system clock domain
+  always@(posedge clk)
+    begin
+      SDA_d <= SDA;
+      SCL_d <= SCL;
+      in_READ_d <= in_READ;
+    end
+  assign SDA_negedge = SDA_d & ~SDA;
+  assign SDA_posedge = ~SDA_d & SDA;
+  assign SCL_negedge = SCL_d & ~SCL;
+  //assign SCL_posedge = ~SCL_d & SCL;
+  assign in_READ_pulse = ~in_READ_d & in_READ;
+
+  //Decode states
+  assign in_IDLE = (state == IDLE);
+  assign in_ADDRS_ACK = (state == ADDRS_ACK);
+  assign in_ADDRS = (state == ADDRS);
+  assign in_WRITE = (state == WRITE);
+  assign in_WRITE_ACK = (state == WRITE_ACK);
+  assign in_READ = (state == READ);
+  assign in_READ_ACK = (state == READ_ACK);
+  assign newData = in_WRITE_ACK;
+  assign addrsed = (addr == data_i_buff[7:1]);
+  assign dataReq = in_ADDRS_ACK | (in_READ_ACK & ~SDA);
+
+  //Data line handling
+  assign SDA = (SDA_Claim) ? SDA_Write : 1'bZ;
+  assign SDA_Claim = in_READ | (in_ADDRS_ACK & addrsed) | in_WRITE_ACK;
+  assign SDA_Write = (in_WRITE_ACK | in_ADDRS_ACK) ? 1'b0 : data_i_buff[7];
+
+  //State transactions
+  always@(posedge clk)
+    begin
+      if(rst)
+        begin
+          state <= IDLE;
+        end
+      else
+        begin
+          case(state)
+            IDLE:
+              begin
+                state <= (SCL & SDA_negedge) ? ADDRS : state;
+              end
+            ADDRS:
+              begin
+                state <= (SCL_negedge & counterDONE) ? ADDRS_ACK : state;
+              end
+            ADDRS_ACK:
+              begin
+                state <= (addrsed & 1) ? ((data_i_buff[0]) ? READ : WRITE): IDLE;
+              end
+            WRITE:
+              begin
+                state <= (SCL & SDA_posedge) ? IDLE : ((SCL_negedge & counterDONE) ? WRITE_ACK : state);
+              end
+            WRITE_ACK:
+              begin
+                state <= (SCL_negedge) ? WRITE : state;
+              end
+            READ:
+              begin
+                state <= (SCL_negedge & counterDONE) ? READ_ACK : state;
+              end
+            READ_ACK:
+              begin
+                state <= (SCL_negedge) ? ((SDA) ? IDLE : READ ) : state;
+              end
+            default:
+              begin
+                state <= IDLE;
+              end
+          endcase     
+        end
+    end
+  
+  //Counter
+  assign counterDONE = ~|counter;
+  always@(negedge SCL) 
+    begin
+      case(state)
+        ADDRS:
+          begin
+            counter <= counter + 3'd1;
+          end
+        WRITE:
+          begin
+            counter <= counter + 3'd1;
+          end
+        READ:
+          begin
+            counter <= counter + 3'd1;
+          end
+        default:
+          begin
+            counter <= 3'd0;
+          end
+      endcase
+      
+    end
+
+  //data in buffer
+  always@(negedge SCL or posedge in_READ_pulse)
+    begin
+      if(in_READ_pulse)
+        begin
+          data_i_buff <= data_i;
+        end
+      else
+        begin
+          data_i_buff <= (in_READ) ? (data_i_buff << 1) : data_i_buff;
+        end
+    end
+  
+  //Store buffer data during ack
+  always@(posedge in_WRITE_ACK or posedge rst)
+    begin
+      if(rst)
+        begin
+          data_o <= 7'd0;
+        end
+      else
+        begin
+          data_o <= data_o_buff;
+        end
+    end
+  
+  //data out buffer
+  always@(negedge SCL)
+    begin
+      data_o_buff <= (in_ADDRS | in_WRITE) ? {data_o_buff[6:0], SDA} : data_o_buff;
+    end 
+endmodule//i2c_slave
 
 //freqSLCT:2x(3.125MHz,781.25kHz,390.625kHz,97.656kHz)
 //Following module will generate correct frequencies only for 100 MHz clk_i

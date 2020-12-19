@@ -8,6 +8,7 @@
 4. Inter-Integrated Circuit (Brief information)
 5. Test
 6. Status Information
+7. Issues
 
 [![Repo on GitLab](https://img.shields.io/badge/repo-GitLab-6C488A.svg)](https://gitlab.com/suoglu/i2c)
 [![Repo on GitHub](https://img.shields.io/badge/repo-GitHub-3D76C2.svg)](https://github.com/suoglu/Simple-I2C)
@@ -28,6 +29,11 @@ I²C communication modules and clock generator modules are included in [i2c.v](S
 * Only supports single master
 * Can read/write up to 4 Bytes of data in single transaction.
 * Works with 3.125MHz, 781.25kHz, 390.625kHz and 97.656kHz clock frequencies
+
+**`i2c_slave`**
+
+* I²C Slave module
+* Currently does not work
 
 **`clockGen_i2c`**
 
@@ -71,3 +77,7 @@ Master module tested on [Basys 3](https://reference.digilentinc.com/reference/pr
 ## Status Information
 
 **Last test of master module:** 19 December 2020, on [Digilent Basys 3](https://reference.digilentinc.com/reference/programmable-logic/basys-3/reference-manual).
+
+## Issues
+
+* Slave module does not work
