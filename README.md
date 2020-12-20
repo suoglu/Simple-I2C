@@ -70,6 +70,8 @@ From [Wikipedia](https://en.wikipedia.org/wiki/I%C2%B2C): I²C uses only two bid
 
 ## Test
 
+Information about the test of I²C master module can be found below.
+
 ### Master
 
 Master module tested on [Basys 3](https://reference.digilentinc.com/reference/programmable-logic/basys-3/reference-manual) with [master_board.v](Test/master_board.v) and [Basys3_master.xdc](Test/Basys3_master.xdc). [Pmod HYGRO](https://reference.digilentinc.com/reference/pmod/pmodhygro/start) is connected to upper JB header. `SDA`, `SCL`, `newData` and `busy` signals monitored using logic analyzer and protocol spying of [Digital Discovery](https://reference.digilentinc.com/reference/instrumentation/digital-discovery/start). Read values connected to seven segment displays. Right button used to initiate new transaction. Switches used to get user inputs. Writing one byte data and reading two byte data is tested.
