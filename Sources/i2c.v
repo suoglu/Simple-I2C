@@ -1,5 +1,5 @@
 /* ------------------------------------------------ *
- * Title       : Simple I2C interface               *
+ * Title       : Simple I2C interface v1.1          *
  * Project     : Simple I2C                         *
  * ------------------------------------------------ *
  * File        : i2c.v                              *
@@ -7,6 +7,12 @@
  * Last Edit   : 18/12/2020                         *
  * ------------------------------------------------ *
  * Description : I2C slave and master modules       *
+ * ------------------------------------------------ *
+ * Revisions                                        *
+ *     v1      : Inital version for working master  *
+ *     v1.1    : Master samples ack while SCL high, *
+ *               Master end transaction when slave  *
+ *               gave NACK to write acknowledgment  *
  * ------------------------------------------------ */
 
  module i2c_master(
@@ -41,6 +47,7 @@
   reg i2c_clk_half; //Low: Shift High: Sample
   wire SDA_Write;
   wire SDA_Claim;
+  reg SDA_d;
   wire counterDONE;
   reg en;
   reg [2:0] counter;
@@ -72,6 +79,11 @@
   assign SDA = (SDA_Claim) ? SDA_Write : 1'bZ;
   assign SDA_Claim = in_START | in_ADDRS | in_WRITE | in_READ_ACK | in_STOP;
   assign SDA_Write = (in_READ_ACK | in_START | in_STOP) ? (in_READ_ACK & (~moreBytes)) : data_i_buff[7];
+  always@(negedge i2c_clk)
+    begin
+      SDA_d <= SDA;
+    end
+  
 
   //Count bytes
   assign moreBytes = (data_byte_size != last_byte);
@@ -179,7 +191,7 @@
               end
             WRITE_ACK:
               begin
-                state <= (~SCL & ~SDA) ? ((moreBytes | givingADDRS) ? ((~read_nwrite) ? ((data_valid) ? WRITE : state) : READ): STOP) : state;
+                state <= (~SCL) ? ((~SDA_d & (moreBytes | givingADDRS)) ? ((~read_nwrite) ? ((data_valid) ? WRITE : state) : READ): STOP) : state;
               end
             WRITE:
               begin
