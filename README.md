@@ -78,7 +78,7 @@ Master module tested on [Basys 3](https://reference.digilentinc.com/reference/pr
 
 ## Status Information
 
-**Last test of master module:** 19 December 2020, on [Digilent Basys 3](https://reference.digilentinc.com/reference/programmable-logic/basys-3/reference-manual).
+**Last test of master module:** 01 January 2021, on [Digilent Basys 3](https://reference.digilentinc.com/reference/programmable-logic/basys-3/reference-manual).
 
 **Last test of slave module:** -
 
