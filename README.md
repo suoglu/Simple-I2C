@@ -85,3 +85,4 @@ Master module tested on [Basys 3](https://reference.digilentinc.com/reference/pr
 ## Issues
 
 * Slave module does not work
+* Some glitches on SDA while SCL is low in Master module during write. But it doesn't seem to cause any problems.
