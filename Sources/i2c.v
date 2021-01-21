@@ -12,7 +12,7 @@
  *     v1      : Inital version for working master  *
  *     v1.1    : Master samples ack while SCL high, *
  *               Master end transaction when slave  *
- *               gave NACK to write acknowledgment  *
+ *               gave NACK to write acknowledgment  * 
  * ------------------------------------------------ */
 
  module i2c_master(
@@ -43,8 +43,8 @@
           READ_ACK = 3'b101,
               STOP = 3'b100;
   reg [7:0] data_i_buff, data_o_buff;
-  wire i2c_clk; //Used to shifting and sampling
-  reg i2c_clk_half; //Low: Shift High: Sample
+  wire i2c_clk; //Used to shifting and sampling //TODO: Rename
+  reg i2c_clk_half; //Low: Shift High: Sample //TODO: Rename
   wire SDA_Write;
   wire SDA_Claim;
   reg SDA_d;
