@@ -4,7 +4,7 @@
  * ------------------------------------------------ *
  * File        : i2c.v                              *
  * Author      : Yigit Suoglu                       *
- * Last Edit   : 31/12/2020                         *
+ * Last Edit   : 28/01/2021                         *
  * ------------------------------------------------ *
  * Description : I2C slave and master modules       *
  * ------------------------------------------------ *
@@ -15,7 +15,7 @@
  *               gave NACK to write acknowledgment  * 
  * ------------------------------------------------ */
 
- module i2c_master(
+module i2c_master(
   input clk,
   input rst,
   //Config & Control
@@ -43,8 +43,8 @@
           READ_ACK = 3'b101,
               STOP = 3'b100;
   reg [7:0] data_i_buff, data_o_buff;
-  wire i2c_clk; //Used to shifting and sampling //TODO: Rename
-  reg i2c_clk_half; //Low: Shift High: Sample //TODO: Rename
+  wire i2c_clk; //Used to shifting and sampling
+  reg i2c_clk_half; //Low: Shift High: Sample
   wire SDA_Write;
   wire SDA_Claim;
   reg SDA_d;
@@ -265,9 +265,10 @@
         end
     end
   clockGen_i2c sdaGEN(clk, rst, freqSLCT, i2c_clk);
- endmodule//i2c_master
+endmodule//i2c_master
 
-module i2c_slave(
+module i2c_slave( //TODO: Fix
+  //output [5:0] debug,
   input clk,
   input rst,
   //Config & Control
@@ -281,13 +282,14 @@ module i2c_slave(
   //I2C pins
   (* clock_buffer_type="none" *) input SCL,
   inout SDA/* synthesis keep = 1 */);
-  localparam IDLE = 3'b000,
+  localparam  IDLE = 3'b000,
              ADDRS = 3'b001,
          ADDRS_ACK = 3'b011,
              WRITE = 3'b110,
          WRITE_ACK = 3'b010,
               READ = 3'b111,
-          READ_ACK = 3'b101;
+          READ_ACK = 3'b101,
+         WAIT_STOP = 3'b100;
   wire in_IDLE, in_ADDRS_ACK, in_ADDRS, in_WRITE, in_WRITE_ACK, in_READ, in_READ_ACK, in_STOP;
   wire SDA_Write;
   wire SDA_Claim;
@@ -299,6 +301,9 @@ module i2c_slave(
   reg [2:0] counter;
   wire counterDONE;
   wire addrsed;
+  wire startCond, stopCond;
+
+  //assign debug = {counter,state};
 
   //I2C signal edges into system clock domain
   always@(posedge clk)
@@ -312,6 +317,10 @@ module i2c_slave(
   assign SCL_negedge = SCL_d & ~SCL;
   //assign SCL_posedge = ~SCL_d & SCL;
   assign in_READ_pulse = ~in_READ_d & in_READ;
+
+  //Conditions
+  assign startCond = SCL & SDA_negedge;
+  assign stopCond = SCL & SDA_posedge;
 
   //Decode states
   assign in_IDLE = (state == IDLE);
@@ -328,7 +337,7 @@ module i2c_slave(
   //Data line handling
   assign SDA = (SDA_Claim) ? SDA_Write : 1'bZ;
   assign SDA_Claim = in_READ | (in_ADDRS_ACK & addrsed) | in_WRITE_ACK;
-  assign SDA_Write = (in_WRITE_ACK | in_ADDRS_ACK) ? 1'b0 : data_i_buff[7];
+  assign SDA_Write = (in_READ) ? data_i_buff[7] : 1'b0;
 
   //State transactions
   always@(posedge clk)
@@ -342,7 +351,7 @@ module i2c_slave(
           case(state)
             IDLE:
               begin
-                state <= (SCL & SDA_negedge) ? ADDRS : state;
+                state <= (startCond) ? ADDRS : state;
               end
             ADDRS:
               begin
@@ -350,11 +359,11 @@ module i2c_slave(
               end
             ADDRS_ACK:
               begin
-                state <= (addrsed & 1) ? ((data_i_buff[0]) ? READ : WRITE): IDLE;
+                state <= (addrsed) ? ((data_i_buff[0]) ? READ : WRITE): IDLE;
               end
             WRITE:
               begin
-                state <= (SCL & SDA_posedge) ? IDLE : ((SCL_negedge & counterDONE) ? WRITE_ACK : state);
+                state <= (stopCond) ? IDLE : ((SCL_negedge & counterDONE) ? WRITE_ACK : state);
               end
             WRITE_ACK:
               begin
@@ -366,11 +375,11 @@ module i2c_slave(
               end
             READ_ACK:
               begin
-                state <= (SCL_negedge) ? ((SDA) ? IDLE : READ ) : state;
+                state <= (SDA_posedge) ? ((SDA) ? WAIT_STOP : READ ) : state;
               end
-            default:
+            WAIT_STOP: //redundant
               begin
-                state <= IDLE;
+                state <= (stopCond) ? IDLE : state;
               end
           endcase     
         end
@@ -402,7 +411,7 @@ module i2c_slave(
     end
 
   //data in buffer
-  always@(negedge SCL or posedge in_READ_pulse)
+  always@(negedge SCL_d or posedge in_READ_pulse)
     begin
       if(in_READ_pulse)
         begin

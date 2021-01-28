@@ -12,6 +12,7 @@
 // `include "Test/ssd_util.v"
 
 module slave_board(
+  //output [5:0] debug,
   input clk,
   input rst,
   input [15:0] sw,
@@ -57,5 +58,5 @@ module slave_board(
 
   ssdController4 ssd_ctrl(clk, rst, 4'b1111, storage[15:12], storage[11:8], storage[7:4], storage[3:0], seg, an);
   
-  i2c_slave uut_slave(clk, rst, busy, newData,  dataReq, 7'b1010101, data_i, data_o, SCL, SDA);
+  i2c_slave uut_slave(debug, clk, rst, busy, newData,  dataReq, 7'b1010101, data_i, data_o, SCL, SDA);
 endmodule//slave_board
