@@ -1,5 +1,5 @@
 /* ------------------------------------------------ *
- * Title       : Simple I2C interface v1.1          *
+ * Title       : Simple I2C interface v1.2          *
  * Project     : Simple I2C                         *
  * ------------------------------------------------ *
  * File        : i2c.v                              *
@@ -13,6 +13,7 @@
  *     v1.1    : Master samples ack while SCL high, *
  *               Master end transaction when slave  *
  *               gave NACK to write acknowledgment  * 
+ *     v1.2    : Multi master support               *
  * ------------------------------------------------ */
 
 module i2c_master(
@@ -32,7 +33,7 @@ module i2c_master(
   input [7:0] data_i, //Data in
   output reg [7:0] data_o, //Data Out
   //I2C pins
-  output SCL/* synthesis keep = 1 */,
+  inout SCL/* synthesis keep = 1 */,
   inout SDA/* synthesis keep = 1 */);
   localparam READY = 3'b000,
              START = 3'b001,
@@ -47,6 +48,7 @@ module i2c_master(
   reg i2c_clk_half; //Low: Shift High: Sample
   wire SDA_Write;
   wire SDA_Claim;
+  wire SCL_Claim;
   reg SDA_d;
   wire counterDONE;
   reg en;
@@ -57,6 +59,39 @@ module i2c_master(
   reg givingADDRS;
   wire in_READY, in_START, in_ADDRS, in_WRITE, in_WRITE_ACK, in_READ, in_READ_ACK, in_STOP;
   wire in_ACK;
+  wire startCond, stopCond;
+  reg SDA_dSys;
+  reg I2C_busy;
+
+  //I2C signal edges into system clock domain
+  always@(posedge clk)
+    begin
+      SDA_dSys <= SDA;
+    end
+  assign SDA_negedge = SDA_dSys & ~SDA;
+  assign SDA_posedge = ~SDA_dSys & SDA;
+
+  //Conditions
+  assign startCond = SCL & SDA_negedge;
+  assign stopCond = SCL & SDA_posedge;
+
+  always@(posedge clk or posedge rst)
+    begin
+      if(rst)
+        I2C_busy <= 1'b0;
+      else
+        case(I2C_busy)
+          1'b0:
+            begin
+              I2C_busy <= (in_READY) ? startCond : I2C_busy;
+            end
+          1'b1:
+            begin
+              I2C_busy <= (in_READY) ? ~stopCond : I2C_busy;
+            end
+        endcase
+        
+    end
 
   //Decode states
   assign in_READY = (state == READY);
@@ -70,8 +105,9 @@ module i2c_master(
   assign busy = ~in_READY;
   assign newData = in_READ_ACK;
   assign in_ACK = in_READ_ACK | in_WRITE_ACK;
+  assign SCL_Claim = ~in_READY;
 
-  assign SCL = (in_READY) ? 1'b1 : i2c_clk_half;
+  assign SCL = (SCL_Claim) ? i2c_clk_half : 1'bZ;
 
   assign dataReq = ~data_valid & ((moreBytes & in_WRITE) | in_ADDRS);
   
@@ -179,7 +215,7 @@ module i2c_master(
           case(state)
             READY:
               begin
-                state <= (en & i2c_clk_half) ? START : state;
+                state <= (~I2C_busy & en & i2c_clk_half) ? START : state;
               end
             START:
               begin

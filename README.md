@@ -26,7 +26,7 @@ I²C communication modules and clock generator modules are included in [i2c.v](S
 **`i2c_master`**
 
 * I²C Master module
-* Only supports single master
+* Multi master support
 * Can read/write up to 4 Bytes of data in single transaction.
 * Works with 3.125MHz, 781.25kHz, 390.625kHz and 97.656kHz clock frequencies
 
