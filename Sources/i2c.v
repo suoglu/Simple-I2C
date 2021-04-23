@@ -1,37 +1,35 @@
 /* ------------------------------------------------ *
- * Title       : Simple I2C interface v1.2          *
+ * Title       : Simple I2C interface v2            *
  * Project     : Simple I2C                         *
  * ------------------------------------------------ *
  * File        : i2c.v                              *
  * Author      : Yigit Suoglu                       *
- * Last Edit   : 28/01/2021                         *
+ * Last Edit   : 23/04/2021                         *
  * ------------------------------------------------ *
  * Description : I2C slave and master modules       *
  * ------------------------------------------------ *
  * Revisions                                        *
- *     v1      : Inital version for working master  *
- *     v1.1    : Master samples ack while SCL high, *
- *               Master end transaction when slave  *
- *               gave NACK to write acknowledgment  * 
- *     v1.2    : Multi master support               *
+ *     v2      : Changed master algorithm           *
  * ------------------------------------------------ */
 
 module i2c_master(
   input clk,
   input rst,
-  //Config & Control
-  input [1:0] freqSLCT, //3.125MHz,781.25kHz,390.625kHz,97.656kHz
-  output busy,
-  output newData, //New data avaible 
-  output dataReq, //when high enter new data
-  input data_valid, //Data in valid
+  input clkI2Cx2,
+  //Control
   input start, //begin transaction
-  input [1:0] data_byte_size,
+  output ready,
+  output reg i2cBusy,
+  output data_available, //New data avaible 
+  output data_request, //when high enter new data
+  input data_valid, //Data in valid
+  //Addressing and read/write
   input read_nwrite, //1: read; 0: write
-  //Data interface
   input [6:0] addr, //I2C address for slave
+  //Data interface
   input [7:0] data_i, //Data in
-  output reg [7:0] data_o, //Data Out
+  output [7:0] data_o, //Data Out
+  input [2:0] data_size, //!Max 8 Bytes
   //I2C pins
   inout SCL/* synthesis keep = 1 */,
   inout SDA/* synthesis keep = 1 */);
@@ -43,168 +41,123 @@ module i2c_master(
               READ = 3'b111,
           READ_ACK = 3'b101,
               STOP = 3'b100;
-  reg [7:0] data_i_buff, data_o_buff;
-  wire i2c_clk; //Used to shifting and sampling
-  reg i2c_clk_half; //Low: Shift High: Sample
-  wire SDA_Write;
-  wire SDA_Claim;
-  wire SCL_Claim;
-  reg SDA_d;
-  wire counterDONE;
-  reg en;
-  reg [2:0] counter;
-  reg [1:0] last_byte;
+  //state & state control
   reg [2:0] state;
-  wire moreBytes;
-  reg givingADDRS;
-  wire in_READY, in_START, in_ADDRS, in_WRITE, in_WRITE_ACK, in_READ, in_READ_ACK, in_STOP;
-  wire in_ACK;
-  wire startCond, stopCond;
-  reg SDA_dSys;
-  reg I2C_busy;
+  wire inReady, inStart, inAddrs, inWrite, inWriteAck, inRead, inReadAck, inStop, inAck;
+  //data control
+  wire addressByte;
+  wire SDAupdate, SDAshift;
+  //Transmisson counters
+  reg [2:0] byteCounter;
+  reg [2:0] bitCounter;
+  wire byteCountDone;
+  wire bitCountDone;
+  wire byteCountUp;
+  //Generate I2C signals with tri-state
+  reg SCLK; //Internal I2C clock, always thicks
+  wire SCL_claim;
+  wire SDA_claim;
+  wire SDA_write;
+  //delayed signals
+  reg inAck_d, SDA_d;
+  reg SDA_d_i2c;
+  //Buffers
+  reg [7:0] send_buffer, receive_buffer;
+  //Internal control signals
+  wire startCondition, stopCondition; //I2C conditions
+  wire SDA_negedge, SDA_posedge;
+  wire need_data;
 
-  //I2C signal edges into system clock domain
+  assign addressByte = {addr,read_nwrite}; //Get address byte
+
+  //Data flags
+  assign data_available = inReadAck;
+  assign in_last_byte = (data_size - 3'd1) == byteCounter;
+  assign data_request = ~data_valid & need_data;
+  assign need_data = (~read_nwrite & inAddrs) | (~in_last_byte & inWrite);
+
+  //decode states
+  assign      ready = inReady;
+  assign     inRead = (state == READ);
+  assign     inStop = (state == STOP);
+  assign    inReady = (state == READY);
+  assign    inStart = (state == START);
+  assign    inAddrs = (state == ADDRS);
+  assign    inWrite = (state == WRITE);
+  assign  inReadAck = (state == READ_ACK);
+  assign inWriteAck = (state == WRITE_ACK);
+  assign      inAck = inWriteAck | inReadAck;
+
+  //Tri-state control for I2C lines
+  assign SCL = (SCL_claim) ?    SCLK   : 1'bZ;
+  assign SDA = (SDA_claim) ? SDA_write : 1'bZ;
+  assign SCL_claim = ~inReady;
+  assign SDA_claim = inStart | inAddrs | inWrite | inReadAck | inStop;
+  assign SDA_write = (inStart | inReadAck | inStop) ? 1'd0 : send_buffer[7];
+
+  //Listen I2C Bus & cond. gen.
+  assign    SDA_negedge  = ~SDA &  SDA_d;
+  assign    SDA_posedge  =  SDA & ~SDA_d;
+  assign startCondition  =  SCL & SDA_negedge;
+  assign  stopCondition  =  SCL & SDA_posedge;
+
+  //delay signals
   always@(posedge clk)
     begin
-      SDA_dSys <= SDA;
-    end
-  assign SDA_negedge = SDA_dSys & ~SDA;
-  assign SDA_posedge = ~SDA_dSys & SDA;
-
-  //Conditions
-  assign startCond = SCL & SDA_negedge;
-  assign stopCond = SCL & SDA_posedge;
-
-  always@(posedge clk or posedge rst)
-    begin
-      if(rst)
-        I2C_busy <= 1'b0;
-      else
-        case(I2C_busy)
-          1'b0:
-            begin
-              I2C_busy <= (in_READY) ? startCond : I2C_busy;
-            end
-          1'b1:
-            begin
-              I2C_busy <= (in_READY) ? ~stopCond : I2C_busy;
-            end
-        endcase
-        
-    end
-
-  //Decode states
-  assign in_READY = (state == READY);
-  assign in_START = (state == START);
-  assign in_ADDRS = (state == ADDRS);
-  assign in_WRITE = (state == WRITE);
-  assign in_WRITE_ACK = (state == WRITE_ACK);
-  assign in_READ = (state == READ);
-  assign in_READ_ACK = (state == READ_ACK);
-  assign in_STOP = (state == STOP);
-  assign busy = ~in_READY;
-  assign newData = in_READ_ACK;
-  assign in_ACK = in_READ_ACK | in_WRITE_ACK;
-  assign SCL_Claim = ~in_READY;
-
-  assign SCL = (SCL_Claim) ? i2c_clk_half : 1'bZ;
-
-  assign dataReq = ~data_valid & ((moreBytes & in_WRITE) | in_ADDRS);
-  
-  //Data line handling
-  assign SDA = (SDA_Claim) ? SDA_Write : 1'bZ;
-  assign SDA_Claim = in_START | in_ADDRS | in_WRITE | in_READ_ACK | in_STOP;
-  assign SDA_Write = (in_READ_ACK | in_START | in_STOP) ? (in_READ_ACK & (~moreBytes)) : data_i_buff[7];
-  always@(negedge i2c_clk)
-    begin
+      inAck_d <= inAck;
       SDA_d <= SDA;
     end
-  
-
-  //Count bytes
-  assign moreBytes = (data_byte_size != last_byte);
-  always@(negedge in_ACK or posedge in_START)
+  always@(negedge clkI2Cx2)
     begin
-      if(in_START)
-        begin
-          last_byte <= 2'b11;
-        end
-      else
-        begin
-          last_byte <= last_byte + 2'b1; 
-        end
-    end
-  always@(posedge clk)
-    begin
-      case(state)
-        START:
-          begin
-            givingADDRS <= 1'b1;
-          end
-        WRITE:
-          begin
-            givingADDRS <= 1'b0;
-          end
-        READ:
-          begin
-            givingADDRS <= 1'b0;
-          end
-        default:
-          begin
-            givingADDRS <= givingADDRS;
-          end
-      endcase
+      SDA_d_i2c <= SDA;
     end
   
-  //Internal enable
+  //Determine if an other master is using the bus
   always@(posedge clk or posedge rst)
     begin
       if(rst)
         begin
-          en <= 0;
+          i2cBusy <= 1'b0;
         end
       else
         begin
-          case(en)
-            0:
+          case(i2cBusy)
+            1'b0:
               begin
-                en <= in_READY & start;
+                i2cBusy <= startCondition & inReady;
               end
-            1:
+            1'b1:
               begin
-                en <= in_READY;
+                i2cBusy <= ~stopCondition & inReady;
               end
           endcase
-          
+        end
+    end
+  
+  //receive buffer
+  always@(posedge clkI2Cx2)
+    begin
+      if(inRead & SCL)
+        begin
+          receive_buffer <= {receive_buffer[6:0],SDA};
         end
     end
 
-  //Counter
-  assign counterDONE = ~|counter;
-  always@(negedge i2c_clk_half) 
+  //send buffer
+  always@(negedge clkI2Cx2)
     begin
-      case(state)
-        ADDRS:
-          begin
-            counter <= counter + 3'd1;
-          end
-        WRITE:
-          begin
-            counter <= counter + 3'd1;
-          end
-        READ:
-          begin
-            counter <= counter + 3'd1;
-          end
-        default:
-          begin
-            counter <= 3'd0;
-          end
-      endcase
+      if(SDAupdate)
+        send_buffer <= (inStart) ? addressByte : data_i;
+      else if(SDAshift & ~SCL & |bitCounter)
+        send_buffer <= {send_buffer << 1};
     end
+  
+  //SDA control states for sending data
+  assign SDAupdate = inStart | inWriteAck;
+  assign SDAshift  = inAddrs | inWrite;
 
-  //State transactions
-  always@(negedge i2c_clk or posedge rst)
+  //state transactions
+  always@(negedge clkI2Cx2 or posedge rst)
     begin
       if(rst)
         begin
@@ -215,7 +168,7 @@ module i2c_master(
           case(state)
             READY:
               begin
-                state <= (~I2C_busy & en & i2c_clk_half) ? START : state;
+                state <= (start & SCLK & ~i2cBusy) ? START : state;
               end
             START:
               begin
@@ -223,23 +176,23 @@ module i2c_master(
               end
             ADDRS:
               begin
-                state <= (~SCL & counterDONE) ? WRITE_ACK : state;
+                state <= (~SCL & bitCountDone) ? WRITE_ACK : state;
               end
             WRITE_ACK:
               begin
-                state <= (~SCL) ? ((~SDA_d & (moreBytes | givingADDRS)) ? ((~read_nwrite) ? ((data_valid) ? WRITE : state) : READ): STOP) : state;
+                state <= (~SCL) ? ((~SDA_d_i2c & ~byteCountDone) ? ((~read_nwrite) ? ((data_valid) ? WRITE : state) : READ): STOP) : state;
               end
             WRITE:
               begin
-                state <= (~SCL & counterDONE) ? WRITE_ACK : state;
+                state <= (~SCL & bitCountDone) ? WRITE_ACK : state;
               end
             READ:
               begin
-                state <= (~SCL & counterDONE) ? READ_ACK : state;
+                state <= (~SCL & bitCountDone) ? READ_ACK : state;
               end
             READ_ACK:
               begin
-                state <= (~SCL) ? ((moreBytes) ? READ : STOP) : state;
+                state <= (~SCL) ? ((byteCountDone) ? STOP : READ) : state;
               end
             STOP:
               begin
@@ -249,58 +202,47 @@ module i2c_master(
         end
     end
 
-  //Handle data in buffer
-  always@(negedge i2c_clk)
+  //bit counter
+  assign bitCountDone = ~|bitCounter;
+  always@(posedge SCL) 
     begin
-      case(state)
-        START: //At start load address and op
-          begin
-            data_i_buff <= {addr, read_nwrite};
-          end
-        ADDRS: //During address shift
-          begin
-            data_i_buff <= (SCL) ? data_i_buff : (data_i_buff << 1);
-          end
-        WRITE_ACK: //Load new data during ack
-          begin
-            data_i_buff <= data_i;
-          end
-        WRITE: //During write shift
-          begin
-            data_i_buff <= (SCL) ? data_i_buff : (data_i_buff << 1);
-          end
-        default:
-          begin
-            data_i_buff <= data_i_buff;
-          end
-      endcase
-    end
-
-  //Store output during read ack
-  always@(posedge i2c_clk)
-    begin
-      data_o <= (in_READ_ACK) ? data_o_buff : data_o;
-    end
-  
-  //Handle data out buffer
-  always@(posedge i2c_clk)
-    begin
-      data_o_buff <= (SCL & in_READ) ? {data_o_buff[7:0], SDA} : data_o_buff;
-    end
-  
-  //Divide i2c_clk
-  always@(posedge i2c_clk or posedge rst)
-    begin
-      if(rst)
+      if(inAck|inStart)
         begin
-          i2c_clk_half <= 1;
+          bitCounter <= 3'd0;
         end
       else
         begin
-          i2c_clk_half <= ~i2c_clk_half;
+          bitCounter <= bitCounter + {2'd0,(inAddrs|inWrite|inRead)};
         end
     end
-  clockGen_i2c sdaGEN(clk, rst, freqSLCT, i2c_clk);
+
+  //byte counter
+  assign byteCountUp = ~inAck_d & inAck;
+  assign byteCountDone = (byteCounter == data_size);
+  always@(posedge clk) 
+    begin//another alternative would be using inAck as clock
+      if(inStart)
+        begin
+          byteCounter <= 3'b111;
+        end
+      else
+        begin
+          byteCounter <= byteCounter + {2'd0,byteCountUp};
+        end
+    end
+
+  //Divide clkI2Cx2 to get I2C clk
+  always@(posedge clkI2Cx2 or posedge rst)
+    begin
+      if(rst)
+        begin
+          SCLK <= 1'b1;
+        end
+      else
+        begin
+          SCLK <= ~SCLK;
+        end
+    end
 endmodule//i2c_master
 
 module i2c_slave( //TODO: Fix
