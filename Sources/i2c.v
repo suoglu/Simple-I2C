@@ -29,7 +29,7 @@ module i2c_master(
   //Data interface
   input [7:0] data_i, //Data in
   output [7:0] data_o, //Data Out
-  input [2:0] data_size, //!Max 8 Bytes
+  input [2:0] data_size, //!Max 7 Bytes
   //I2C pins
   inout SCL/* synthesis keep = 1 */,
   inout SDA/* synthesis keep = 1 */);
@@ -45,7 +45,7 @@ module i2c_master(
   reg [2:0] state;
   wire inReady, inStart, inAddrs, inWrite, inWriteAck, inRead, inReadAck, inStop, inAck;
   //data control
-  wire addressByte;
+  wire [7:0] addressByte;
   wire SDAupdate, SDAshift;
   //Transmisson counters
   reg [2:0] byteCounter;
@@ -66,15 +66,13 @@ module i2c_master(
   //Internal control signals
   wire startCondition, stopCondition; //I2C conditions
   wire SDA_negedge, SDA_posedge;
-  wire need_data;
 
   assign addressByte = {addr,read_nwrite}; //Get address byte
 
   //Data flags
   assign data_available = inReadAck;
   assign in_last_byte = (data_size - 3'd1) == byteCounter;
-  assign data_request = ~data_valid & need_data;
-  assign need_data = (~read_nwrite & inAddrs) | (~in_last_byte & inWrite);
+  assign data_request = (~read_nwrite & inAddrs) | (~in_last_byte & inWrite);
 
   //decode states
   assign      ready = inReady;
@@ -93,7 +91,7 @@ module i2c_master(
   assign SDA = (SDA_claim) ? SDA_write : 1'bZ;
   assign SCL_claim = ~inReady;
   assign SDA_claim = inStart | inAddrs | inWrite | inReadAck | inStop;
-  assign SDA_write = (inStart | inReadAck | inStop) ? 1'd0 : send_buffer[7];
+  assign SDA_write = (inStart | inReadAck | inStop) ? (inReadAck & byteCountDone) : send_buffer[7];
 
   //Listen I2C Bus & cond. gen.
   assign    SDA_negedge  = ~SDA &  SDA_d;
@@ -135,6 +133,7 @@ module i2c_master(
     end
   
   //receive buffer
+  assign data_o = receive_buffer;
   always@(posedge clkI2Cx2)
     begin
       if(inRead & SCL)

@@ -16,7 +16,7 @@
  *     v1.2    : Multi master support               *
  * ------------------------------------------------ */
 
-module i2c_master(
+module i2c_masterv1(
   input clk,
   input rst,
   //Config & Control
