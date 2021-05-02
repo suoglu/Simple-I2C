@@ -1,5 +1,5 @@
 /* ------------------------------------------------ *
- * Title       : Simple I2C interface v2            *
+ * Title       : Simple I2C interface v2.1          *
  * Project     : Simple I2C                         *
  * ------------------------------------------------ *
  * File        : i2c.v                              *
@@ -10,6 +10,8 @@
  * ------------------------------------------------ *
  * Revisions                                        *
  *     v2      : Changed master algorithm           *
+ *     v2.1    : Async reset for master bit counter *
+ *               and working slave                  *
  * ------------------------------------------------ */
 
 module i2c_master(
@@ -53,6 +55,7 @@ module i2c_master(
   wire byteCountDone;
   wire bitCountDone;
   wire byteCountUp;
+  wire bitCounterReset;
   //Generate I2C signals with tri-state
   reg SCLK; //Internal I2C clock, always thicks
   wire SCL_claim;
@@ -203,9 +206,10 @@ module i2c_master(
 
   //bit counter
   assign bitCountDone = ~|bitCounter;
-  always@(posedge SCL) 
+  assign bitCounterReset = inAck|inStart;
+  always@(posedge SCL or posedge bitCounterReset) 
     begin
-      if(inAck|inStart)
+      if(bitCounterReset)
         begin
           bitCounter <= 3'd0;
         end
@@ -244,8 +248,7 @@ module i2c_master(
     end
 endmodule//i2c_master
 
-module i2c_slave( //TODO: Fix
-  //output [5:0] debug,
+module i2c_slave(
   input clk,
   input rst,
   //Config & Control
@@ -257,12 +260,12 @@ module i2c_slave( //TODO: Fix
   input [7:0] data_i, //Data in
   output reg [7:0] data_o, //Data Out
   //I2C pins
-  (* clock_buffer_type="none" *) input SCL,
+  input SCL,
   inout SDA/* synthesis keep = 1 */);
   localparam  IDLE = 3'b000,
              ADDRS = 3'b001,
          ADDRS_ACK = 3'b011,
-             WRITE = 3'b110, //TODO
+             WRITE = 3'b110,
          WRITE_ACK = 3'b010,
               READ = 3'b111,
           READ_ACK = 3'b101,
@@ -270,7 +273,7 @@ module i2c_slave( //TODO: Fix
   wire in_IDLE, in_ADDRS_ACK, in_ADDRS, in_WRITE, in_WRITE_ACK, in_READ, in_READ_ACK, in_STOP, in_Get_Data;
   wire SDA_Write;
   wire SDA_Claim;
-  reg [7:0] data_i_buff, data_o_buff;
+  reg [7:0] send_buffer, receive_buffer;
   reg SDA_d, SCL_d, in_READ_d;
   reg [2:0] state;
   wire SDA_negedge, SDA_posedge, SCL_negedge, SCL_posedge;
@@ -280,8 +283,6 @@ module i2c_slave( //TODO: Fix
   wire addressed, read_nwrite;
   wire start_condition, stop_condition;
   reg start_condition_reg;
-
-  //assign debug = {counter,state};
 
   //I2C signal edges into system clock domain
   always@(posedge clk)
@@ -323,12 +324,13 @@ module i2c_slave( //TODO: Fix
   assign in_READ = (state == READ);
   assign in_READ_ACK = (state == READ_ACK);
   assign in_Get_Data = in_ADDRS | in_WRITE;
+  assign busy = ~in_IDLE;
 
   //Flags
   assign data_available = in_WRITE_ACK;
   assign data_request = (in_ADDRS_ACK & addressed) | (in_READ_ACK & ~SDA);
-  assign addressed = (addr == data_o_buff[7:1]);
-  assign read_nwrite = data_o_buff[0];
+  assign addressed = (addr == receive_buffer[7:1]);
+  assign read_nwrite = receive_buffer[0];
   
   //State transactions
   always@(posedge clk or posedge rst)
@@ -383,30 +385,30 @@ module i2c_slave( //TODO: Fix
   //Data line handling
   assign SDA = (SDA_Claim) ? SDA_Write : 1'bZ;
   assign SDA_Claim = in_READ | (in_ADDRS_ACK & addressed) | in_WRITE_ACK;
-  assign SDA_Write = (in_READ) ? data_i_buff[7] : 1'b0;
+  assign SDA_Write = (in_READ) ? send_buffer[7] : 1'b0;
 
   //sample at posedge of SCL
   always@(posedge SCL)
     begin
-      data_o_buff <= (in_Get_Data) ? {data_o_buff[6:0], SDA} : data_o_buff;
+      receive_buffer <= (in_Get_Data) ? {receive_buffer[6:0], SDA} : receive_buffer;
     end
   
   //Data out buffer
   always@(posedge clk)
     begin
-      data_o <= (in_WRITE_ACK) ? data_o_buff : data_o;
+      data_o <= (in_WRITE_ACK) ? receive_buffer : data_o;
     end
   
-  //data_i_buff
+  //send_buffer
   always@(negedge SCL or posedge in_READ_pulse)
     begin
       if(in_READ_pulse)
         begin
-          data_i_buff <= data_i;
+          send_buffer <= data_i;
         end
       else
         begin
-          data_i_buff <= (in_Get_Data) ? (data_i_buff << 1) : data_i_buff;
+          send_buffer <= (in_READ) ? {send_buffer[6:0],1'b1} : send_buffer;
         end
     end
 
