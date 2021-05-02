@@ -4,7 +4,7 @@
  * ------------------------------------------------ *
  * File        : i2c.v                              *
  * Author      : Yigit Suoglu                       *
- * Last Edit   : 23/04/2021                         *
+ * Last Edit   : 02/05/2021                         *
  * ------------------------------------------------ *
  * Description : I2C slave and master modules       *
  * ------------------------------------------------ *
@@ -250,8 +250,8 @@ module i2c_slave( //TODO: Fix
   input rst,
   //Config & Control
   output busy,
-  output newData, //New data avaible 
-  output dataReq,
+  output data_available, //New data avaible 
+  output data_request,
   //Data interface
   input [6:0] addr, //I2C address for slave
   input [7:0] data_i, //Data in
@@ -262,23 +262,24 @@ module i2c_slave( //TODO: Fix
   localparam  IDLE = 3'b000,
              ADDRS = 3'b001,
          ADDRS_ACK = 3'b011,
-             WRITE = 3'b110,
+             WRITE = 3'b110, //TODO
          WRITE_ACK = 3'b010,
               READ = 3'b111,
           READ_ACK = 3'b101,
          WAIT_STOP = 3'b100;
-  wire in_IDLE, in_ADDRS_ACK, in_ADDRS, in_WRITE, in_WRITE_ACK, in_READ, in_READ_ACK, in_STOP;
+  wire in_IDLE, in_ADDRS_ACK, in_ADDRS, in_WRITE, in_WRITE_ACK, in_READ, in_READ_ACK, in_STOP, in_Get_Data;
   wire SDA_Write;
   wire SDA_Claim;
   reg [7:0] data_i_buff, data_o_buff;
   reg SDA_d, SCL_d, in_READ_d;
   reg [2:0] state;
-  wire SDA_negedge, SDA_posedge, SCL_negedge/*, SCL_posedge*/;
+  wire SDA_negedge, SDA_posedge, SCL_negedge, SCL_posedge;
   wire in_READ_pulse;
   reg [2:0] counter;
   wire counterDONE;
-  wire addrsed;
-  wire startCond, stopCond;
+  wire addressed, read_nwrite;
+  wire start_condition, stop_condition;
+  reg start_condition_reg;
 
   //assign debug = {counter,state};
 
@@ -292,12 +293,26 @@ module i2c_slave( //TODO: Fix
   assign SDA_negedge = SDA_d & ~SDA;
   assign SDA_posedge = ~SDA_d & SDA;
   assign SCL_negedge = SCL_d & ~SCL;
-  //assign SCL_posedge = ~SCL_d & SCL;
+  assign SCL_posedge = ~SCL_d & SCL;
   assign in_READ_pulse = ~in_READ_d & in_READ;
 
   //Conditions
-  assign startCond = SCL & SDA_negedge;
-  assign stopCond = SCL & SDA_posedge;
+  assign start_condition = SCL & SDA_negedge;
+  assign stop_condition = SCL & SDA_posedge;
+  always@(posedge clk or posedge rst)
+    begin
+      if(rst)
+        begin
+          start_condition_reg <= 1'b0;
+        end
+      else
+        begin
+          case(start_condition_reg)
+            1'b0: start_condition_reg <= start_condition;
+            1'b1: start_condition_reg <= in_IDLE;
+          endcase
+        end
+    end
 
   //Decode states
   assign in_IDLE = (state == IDLE);
@@ -307,17 +322,16 @@ module i2c_slave( //TODO: Fix
   assign in_WRITE_ACK = (state == WRITE_ACK);
   assign in_READ = (state == READ);
   assign in_READ_ACK = (state == READ_ACK);
-  assign newData = in_WRITE_ACK;
-  assign addrsed = (addr == data_i_buff[7:1]);
-  assign dataReq = in_ADDRS_ACK | (in_READ_ACK & ~SDA);
+  assign in_Get_Data = in_ADDRS | in_WRITE;
 
-  //Data line handling
-  assign SDA = (SDA_Claim) ? SDA_Write : 1'bZ;
-  assign SDA_Claim = in_READ | (in_ADDRS_ACK & addrsed) | in_WRITE_ACK;
-  assign SDA_Write = (in_READ) ? data_i_buff[7] : 1'b0;
-
+  //Flags
+  assign data_available = in_WRITE_ACK;
+  assign data_request = (in_ADDRS_ACK & addressed) | (in_READ_ACK & ~SDA);
+  assign addressed = (addr == data_o_buff[7:1]);
+  assign read_nwrite = data_o_buff[0];
+  
   //State transactions
-  always@(posedge clk)
+  always@(posedge clk or posedge rst)
     begin
       if(rst)
         begin
@@ -326,69 +340,65 @@ module i2c_slave( //TODO: Fix
       else
         begin
           case(state)
+            WAIT_STOP:
+              begin
+                state <= (stop_condition) ? IDLE : state;
+              end
             IDLE:
               begin
-                state <= (startCond) ? ADDRS : state;
+                state <= (start_condition_reg & SCL_negedge) ? ADDRS : state;
               end
             ADDRS:
               begin
-                state <= (SCL_negedge & counterDONE) ? ADDRS_ACK : state;
+                state <= (counterDONE & SCL_negedge) ? ADDRS_ACK : state;
               end
             ADDRS_ACK:
               begin
-                state <= (addrsed) ? ((data_i_buff[0]) ? READ : WRITE): IDLE;
+                state <= (SCL_negedge) ? ((addressed) ? ((read_nwrite) ? READ : WRITE) : WAIT_STOP) : state;
+              end
+            READ:
+              begin
+                state <= (counterDONE & SCL_negedge) ? READ_ACK : state;
+              end
+            READ_ACK:
+              begin
+                state <= (SCL_negedge) ? READ : (((SDA_posedge & SDA)? WAIT_STOP : state));
               end
             WRITE:
               begin
-                state <= (stopCond) ? IDLE : ((SCL_negedge & counterDONE) ? WRITE_ACK : state);
+                state <= (stop_condition) ? IDLE : ((counterDONE & SCL_negedge) ? WRITE_ACK : state);
               end
             WRITE_ACK:
               begin
                 state <= (SCL_negedge) ? WRITE : state;
               end
-            READ:
+            default:
               begin
-                state <= (SCL_negedge & counterDONE) ? READ_ACK : state;
+                state <= IDLE;
               end
-            READ_ACK:
-              begin
-                state <= (SDA_posedge) ? ((SDA) ? WAIT_STOP : READ ) : state;
-              end
-            WAIT_STOP: //redundant
-              begin
-                state <= (stopCond) ? IDLE : state;
-              end
-          endcase     
+          endcase
         end
     end
-  
-  //Counter
-  assign counterDONE = ~|counter;
-  always@(negedge SCL) 
-    begin
-      case(state)
-        ADDRS:
-          begin
-            counter <= counter + 3'd1;
-          end
-        WRITE:
-          begin
-            counter <= counter + 3'd1;
-          end
-        READ:
-          begin
-            counter <= counter + 3'd1;
-          end
-        default:
-          begin
-            counter <= 3'd0;
-          end
-      endcase
-      
-    end
 
-  //data in buffer
-  always@(negedge SCL_d or posedge in_READ_pulse)
+  //Data line handling
+  assign SDA = (SDA_Claim) ? SDA_Write : 1'bZ;
+  assign SDA_Claim = in_READ | (in_ADDRS_ACK & addressed) | in_WRITE_ACK;
+  assign SDA_Write = (in_READ) ? data_i_buff[7] : 1'b0;
+
+  //sample at posedge of SCL
+  always@(posedge SCL)
+    begin
+      data_o_buff <= (in_Get_Data) ? {data_o_buff[6:0], SDA} : data_o_buff;
+    end
+  
+  //Data out buffer
+  always@(posedge clk)
+    begin
+      data_o <= (in_WRITE_ACK) ? data_o_buff : data_o;
+    end
+  
+  //data_i_buff
+  always@(negedge SCL or posedge in_READ_pulse)
     begin
       if(in_READ_pulse)
         begin
@@ -396,28 +406,23 @@ module i2c_slave( //TODO: Fix
         end
       else
         begin
-          data_i_buff <= (in_READ) ? (data_i_buff << 1) : data_i_buff;
+          data_i_buff <= (in_Get_Data) ? (data_i_buff << 1) : data_i_buff;
         end
     end
-  
-  //Store buffer data during ack
-  always@(posedge in_WRITE_ACK or posedge rst)
+
+  //Count posedges
+  assign counterDONE = &counter;
+  always@(posedge SCL or posedge start_condition)
     begin
-      if(rst)
+      if(start_condition)
         begin
-          data_o <= 7'd0;
+          counter <= 3'b111;
         end
       else
         begin
-          data_o <= data_o_buff;
+          counter <= counter + {2'd0, (in_Get_Data | in_READ)};
         end
     end
-  
-  //data out buffer
-  always@(negedge SCL)
-    begin
-      data_o_buff <= (in_ADDRS | in_WRITE) ? {data_o_buff[6:0], SDA} : data_o_buff;
-    end 
 endmodule//i2c_slave
 
 //freqSLCT:2x(3.125MHz,781.25kHz,390.625kHz,97.656kHz)
