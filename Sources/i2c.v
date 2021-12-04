@@ -95,7 +95,7 @@ module i2c_master(
   assign      inAck = inWriteAck | inReadAck;
 
   //Tri-state control for I2C lines
-  assign SCL = (SCL_claim) ?    SCLK   : SCL_i;
+  wire   SCL = (SCL_claim) ?    SCLK   : SCL_i;
   assign SDA = (SDA_claim) ? SDA_write : SDA_i;
   assign SCL_claim = ~inReady;
   assign SDA_claim = inStart | inAddrs | inWrite | inReadAck | inStop;
