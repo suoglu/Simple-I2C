@@ -96,7 +96,7 @@ module i2c_master(
 
   //Tri-state control for I2C lines
   wire   SCL = (SCL_claim) ?    SCLK   : SCL_i;
-  assign SDA = (SDA_claim) ? SDA_write : SDA_i;
+  wire   SDA = (SDA_claim) ? SDA_write : SDA_i;
   assign SCL_claim = ~inReady;
   assign SDA_claim = inStart | inAddrs | inWrite | inReadAck | inStop;
   assign SDA_write = (inStart | inReadAck | inStop) ? (inReadAck & byteCountDone) : send_buffer[7];
