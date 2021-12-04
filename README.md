@@ -74,10 +74,12 @@ I²C communication modules and clock generator modules are included in [i2c.v](S
 | `data_i` |   I  | 8 | Data input |
 | `data_o` |   O  | 8 | Data Output |
 | `data_size` | I  | 3 | Byte size of the transaction |
-| `SCL` |   IO  | 1 | I²C clock signal |
-| `SDA` |  IO  | 1 | I²C data signal |
+| `SCL`* |   IO  | 1 | I²C clock signal |
+| `SDA`* |  IO  | 1 | I²C data signal |
 
 I: Input  O: Output
+
+\* contain pins \_i, \_o and \_t
 
 ### I²C Slave IO (`i2c_slave`)
 
