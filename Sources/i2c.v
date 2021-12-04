@@ -124,7 +124,7 @@ module i2c_master(
   //Determine if an other master is using the bus
   always@(posedge clk or posedge rst) begin
     if(rst) begin
-        i2cBusy <= 1'b0;
+      i2cBusy <= 1'b0;
     end else case(i2cBusy)
       1'b0: i2cBusy <= startCondition & inReady;
       1'b1: i2cBusy <= ~stopCondition & inReady;
