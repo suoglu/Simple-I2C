@@ -106,7 +106,7 @@ module i2c_master(
   assign SDA_t = ~SDA_claim;
 
   //Listen I2C Bus & cond. gen.
-  wire    SCL_posedge =   SCL & ~SCL_d;
+  wire    SCL_posedge  =  SCL & ~SCL_d;
   wire    SDA_negedge  = ~SDA &  SDA_d;
   wire    SDA_posedge  =  SDA & ~SDA_d;
   wire  stopCondition  =  SCL & SDA_posedge;
