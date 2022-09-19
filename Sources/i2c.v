@@ -1,10 +1,10 @@
 /* ------------------------------------------------ *
- * Title       : Simple I2C interface v2.1          *
+ * Title       : Simple I2C interface v2.2          *
  * Project     : Simple I2C                         *
  * ------------------------------------------------ *
  * File        : i2c.v                              *
  * Author      : Yigit Suoglu                       *
- * Last Edit   : 04/12/2021                         *
+ * Last Edit   : 19/09/2022                         *
  * ------------------------------------------------ *
  * Description : I2C master module                  *
  * ------------------------------------------------ *
@@ -12,6 +12,7 @@
  *     v2      : Changed master algorithm           *
  *     v2.1    : Async reset for master bit counter *
  *               and working slave                  *
+ *     v2.2    : Change coding style                *
  * ------------------------------------------------ */
 
 module i2c_master(
@@ -49,9 +50,7 @@ module i2c_master(
               STOP = 3'b100;
   //state & state control
   reg [2:0] state;
-  wire inReady, inStart, inAddrs, inWrite, inWriteAck, inRead, inReadAck, inStop, inAck;
   //data control
-  wire [7:0] addressByte;
   wire SDAupdate, SDAshift;
   //Transmisson counters
   reg [2:0] byteCounter;
@@ -61,10 +60,7 @@ module i2c_master(
   wire byteCountUp;
   wire bitCounterReset;
   //Generate I2C signals with tri-state
-  reg SCLK; //Internal I2C clock, always thicks
-  wire SCL_claim;
-  wire SDA_claim;
-  wire SDA_write;
+  reg SCLK; //Internal I2C clock, always working
   //delayed signals
   reg inAck_d, SDA_d, SCL_d;
   reg SDA_d_i2c;
@@ -75,31 +71,31 @@ module i2c_master(
   wire clkI2Cx2_negedge = ~clkI2Cx2 &  clkI2Cx2_d;
   wire clkI2Cx2_posedge =  clkI2Cx2 & ~clkI2Cx2_d;
 
-  assign addressByte = {addr,read_nwrite}; //Get address byte
+  wire [7:0] addressByte = {addr,read_nwrite}; //Get address byte
 
   //Data flags
   assign data_available = inReadAck;
-  assign in_last_byte = (data_size - 3'd1) == byteCounter;
+  wire in_last_byte = (data_size - 3'd1) == byteCounter;
   assign data_request = (~read_nwrite & inAddrs) | (~in_last_byte & inWrite);
 
   //decode states
   assign      ready = inReady;
-  assign     inRead = (state == READ);
-  assign     inStop = (state == STOP);
-  assign    inReady = (state == READY);
-  assign    inStart = (state == START);
-  assign    inAddrs = (state == ADDRS);
-  assign    inWrite = (state == WRITE);
-  assign  inReadAck = (state == READ_ACK);
-  assign inWriteAck = (state == WRITE_ACK);
-  assign      inAck = inWriteAck | inReadAck;
+  wire     inRead = (state == READ);
+  wire     inStop = (state == STOP);
+  wire    inReady = (state == READY);
+  wire    inStart = (state == START);
+  wire    inAddrs = (state == ADDRS);
+  wire    inWrite = (state == WRITE);
+  wire  inReadAck = (state == READ_ACK);
+  wire inWriteAck = (state == WRITE_ACK);
+  wire      inAck = inWriteAck | inReadAck;
 
   //Tri-state control for I2C lines
+  wire SCL_claim = ~inReady;
+  wire SDA_claim = inStart | inAddrs | inWrite | inReadAck | inStop;
+  wire SDA_write = (inStart | inReadAck | inStop) ? (inReadAck & byteCountDone) : send_buffer[7];
   wire   SCL = (SCL_claim) ?    SCLK   : SCL_i;
   wire   SDA = (SDA_claim) ? SDA_write : SDA_i;
-  assign SCL_claim = ~inReady;
-  assign SDA_claim = inStart | inAddrs | inWrite | inReadAck | inStop;
-  assign SDA_write = (inStart | inReadAck | inStop) ? (inReadAck & byteCountDone) : send_buffer[7];
   assign SCL_o = SCLK;
   assign SCL_t = ~SCL_claim;
   assign SDA_o = SDA_write;
@@ -235,111 +231,75 @@ module clockGen_i2c(
   assign clk_array = {clk_d[3],clk_d[5],clk_d[6],clk_d[8]};
 
   //50MHz
-  always@(posedge clk_i or posedge rst)
-    begin
-      if(rst)
-        begin
-          clk_d[0] <= 0;
-        end
-      else
-        begin
-          clk_d[0] <= ~clk_d[0];
-        end
+  always@(posedge clk_i or posedge rst) begin
+    if(rst) begin
+        clk_d[0] <= 0;
+      end else begin
+        clk_d[0] <= ~clk_d[0];
+      end
     end
   //25MHz
-  always@(posedge clk_d[0] or posedge rst)
-    begin
-      if(rst)
-        begin
-          clk_d[1] <= 0;
-        end
-      else
-        begin
-          clk_d[1] <= ~clk_d[1];
-        end
+  always@(posedge clk_d[0] or posedge rst) begin
+    if(rst) begin
+      clk_d[1] <= 0;
+    end else begin
+      clk_d[1] <= ~clk_d[1];
     end
+  end
   //12.5MHz
-  always@(posedge clk_d[1] or posedge rst)
-    begin
-      if(rst)
-        begin
-          clk_d[2] <= 0;
-        end
-      else
-        begin
-          clk_d[2] <= ~clk_d[2];
-        end
+  always@(posedge clk_d[1] or posedge rst) begin
+    if(rst) begin
+      clk_d[2] <= 0;
+    end else begin
+      clk_d[2] <= ~clk_d[2];
     end
+  end
   //6.25MHz
-  always@(posedge clk_d[2] or posedge rst)
-    begin
-      if(rst)
-        begin
-          clk_d[3] <= 0;
-        end
-      else
-        begin
-          clk_d[3] <= ~clk_d[3];
-        end
+  always@(posedge clk_d[2] or posedge rst) begin
+    if(rst) begin
+      clk_d[3] <= 0;
+    end else begin
+      clk_d[3] <= ~clk_d[3];
     end
+  end
   //3.125MHz
-  always@(posedge clk_d[3] or posedge rst)
-    begin
-      if(rst)
-        begin
-          clk_d[4] <= 0;
-        end
-      else
-        begin
-          clk_d[4] <= ~clk_d[4];
-        end
+  always@(posedge clk_d[3] or posedge rst) begin
+    if(rst) begin
+      clk_d[4] <= 0;
+    end else begin
+      clk_d[4] <= ~clk_d[4];
     end
+  end
   //1.562MHz
-  always@(posedge clk_d[4] or posedge rst)
-    begin
-      if(rst)
-        begin
-          clk_d[5] <= 0;
-        end
-      else
-        begin
-          clk_d[5] <= ~clk_d[5];
-        end
+  always@(posedge clk_d[4] or posedge rst) begin
+    if(rst) begin
+      clk_d[5] <= 0;
+    end else begin
+      clk_d[5] <= ~clk_d[5];
     end
+  end
   //781.25kHz
-  always@(posedge clk_d[5] or posedge rst)
-    begin
-      if(rst)
-        begin
-          clk_d[6] <= 0;
-        end
-      else
-        begin
-          clk_d[6] <= ~clk_d[6];
-        end
+  always@(posedge clk_d[5] or posedge rst) begin
+    if(rst) begin
+      clk_d[6] <= 0;
+    end else begin
+      clk_d[6] <= ~clk_d[6];
     end
+  end
   //390.625kHz
-  always@(posedge clk_d[6] or posedge rst)
-    begin
-      if(rst)
-        begin
-          clk_d[7] <= 0;
-        end
-      else
-        begin
-          clk_d[7] <= ~clk_d[7];
-        end
+  always@(posedge clk_d[6] or posedge rst) begin
+    if(rst) begin
+      clk_d[7] <= 0;
+    end else begin
+      clk_d[7] <= ~clk_d[7];
     end
+  end
   //195.312kHz
-  always@(posedge clk_d[7] or posedge rst)
-    begin
-      if(rst)
-        begin
-          clk_d[8] <= 0;
-        end
-      else
-        begin
-          clk_d[8] <= ~clk_d[8];
-        end
+  always@(posedge clk_d[7] or posedge rst) begin
+    if(rst) begin
+      clk_d[8] <= 0;
+    end else begin
+      clk_d[8] <= ~clk_d[8];
     end
+  end
 endmodule

@@ -1,10 +1,10 @@
 /* ------------------------------------------------ *
- * Title       : Multi Master Support Add-on v1     *
+ * Title       : Multi Master Support Add-on v1.1   *
  * Project     : Simple I2C                         *
  * ------------------------------------------------ *
  * File        : i2c_Multimaster.v                  *
  * Author      : Yigit Suoglu                       *
- * Last Edit   : 31/01/2021                         *
+ * Last Edit   : 19/09/2022                         *
  * ------------------------------------------------ *
  * Description : An add-on module to use single     *
  *               single master I2C masters in multi *
@@ -13,6 +13,7 @@
  * ------------------------------------------------ *
  * Revisions                                        *
  *     v1      : Inital version                     *
+ *     v1.1    : Change coding style                *
  * ------------------------------------------------ */
 
 module i2cMMsup(
@@ -26,44 +27,33 @@ module i2cMMsup(
 
   reg SDA_d; //Delay SDA
   reg I2CinUse; //State
-  wire startCond, stopCond; //I2C conditions
-  wire SDA_negedge, SDA_posedge; //Edges of SDA
-  wire module_rst; //Disableing system also resets
 
-  assign module_rst = ~enable | rst;
+  wire module_rst = ~enable | rst; //Disableing system also resets
 
   assign I2C_Busy = I2CinUse;
   assign I2C_Free = ~I2C_Busy;
 
-  assign startCond = SCL & SDA_negedge;
-  assign  stopCond = SCL & SDA_posedge;
+  wire SDA_negedge = SDA_d & ~SDA;
+  wire SDA_posedge = ~SDA_d & SDA;
 
-  assign SDA_negedge = SDA_d & ~SDA;
-  assign SDA_posedge = ~SDA_d & SDA;
+  wire startCond = SCL & SDA_negedge;
+  wire  stopCond = SCL & SDA_posedge;
 
-  always@(posedge clk or posedge module_rst)
-    begin
-      if(module_rst)
-        begin
-          I2CinUse <= 1'd0;
-        end
-      else
-        begin
-          if(stopCond)
-            begin
-              I2CinUse <= 1'd0;
-            end
-          else if(startCond)
-            begin
-              I2CinUse <= 1'd1;
-            end
-        end
+  always@(posedge clk or posedge module_rst) begin
+    if(module_rst) begin
+      I2CinUse <= 1'd0;
+    end else begin
+      if(stopCond) begin
+        I2CinUse <= 1'd0;
+      end else if(startCond) begin
+        I2CinUse <= 1'd1;
+      end
     end
+  end
 
-  always@(posedge clk)
-    begin
-      SDA_d <= SDA;
-    end
+  always@(posedge clk) begin
+    SDA_d <= SDA;
+  end
 endmodule
 
 module i2cSCLcomb#(parameter MASTERCOUNT = 2)(
