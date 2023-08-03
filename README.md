@@ -10,6 +10,7 @@
 6. Test
 7. Status Information
 8. Issues
+9. Licence
 
 [![Repo on GitLab](https://img.shields.io/badge/repo-GitLab-6C488A.svg)](https://gitlab.com/suoglu/i2c)
 [![Repo on GitHub](https://img.shields.io/badge/repo-GitHub-3D76C2.svg)](https://github.com/suoglu/Simple-I2C)
@@ -150,3 +151,7 @@ Slave module tested on [Basys 3](https://reference.digilentinc.com/reference/pro
 
 * Possible timing issues in slave module
 * Some glitches on SDA while SCL is low in Master module. But it doesn't seem to cause any problems.
+
+## Licence
+
+CERN Open Hardware Licence Version 2 - Weakly Reciprocal

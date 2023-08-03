@@ -5,6 +5,7 @@
  * File        : i2c_Multimaster.v                  *
  * Author      : Yigit Suoglu                       *
  * Last Edit   : 19/09/2022                         *
+ * Licence     : CERN-OHL-W                         *
  * ------------------------------------------------ *
  * Description : An add-on module to use single     *
  *               single master I2C masters in multi *

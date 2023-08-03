@@ -5,6 +5,7 @@
  * File        : i2c_masterv1.v                     *
  * Author      : Yigit Suoglu                       *
  * Last Edit   : 19/09/2022                         *
+ * Licence     : CERN-OHL-W                         *
  * ------------------------------------------------ *
  * Description : I2C master modules v1.3            *
  * ------------------------------------------------ *
